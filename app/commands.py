@@ -1,9 +1,10 @@
 import os
-import sys
 import emoji
 import datetime
+import requests
 from time import sleep
 import yfinance as yf
+import pandas as pd
 from logging import getLogger
 from azure.cognitiveservices.search.websearch import WebSearchClient
 from msrest.authentication import CognitiveServicesCredentials
@@ -72,14 +73,20 @@ class InfoCommand(BaseCommand):
 
 class RecommendationsCommand(BaseCommand):
     keyword = 'recom'
-    help_txt = 'Analyst recommendations summary (top 5), e.g. !recom TSLA'
+    help_txt = 'Analyst recommendations trend, e.g. !recom TSLA'
 
     def run(self, *args):
         symbol = args[0]
-        ticker = yf.Ticker(symbol)
 
         try:
-            msg = ticker.recommendations.loc[datetime.datetime.utcnow() - datetime.timedelta(days=30):].to_markdown()
+            r = requests.get('https://finnhub.io/api/v1/stock/recommendation',
+                             params={'symbol': symbol,
+                                     'token': os.getenv('FINNHUB_API')})
+            df = pd.DataFrame(r.json())
+            df = df.set_index('period').drop('symbol', axis=1).iloc[:4]
+            for col in df.columns:
+                df[col] = df[col].apply(str).str.pad(10, fillchar='_', side='both')
+            msg = df.to_markdown()
         except Exception as e:
             self.logger.error(e)
             self.bot.send_msg(f'Sorry, I couldn\'t find any recommendations for {symbol}')
